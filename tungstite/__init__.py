@@ -15,15 +15,15 @@ from ircrobots.matching import Response, SELF, ANY, Nick, Regex, Formatless
 from .common import EmailInfo, human_duration, LimitedList, LimitedOrderedDict
 from .config import Config
 
-CAP_OPER = Capability(None, "solanum.chat/oper")
-RE_EMAIL = r"^Email\s*: (\S+)$"
+CAP_OPER = Capability(None, "inspircd.org/account-id")
+RE_EMAIL = r"^Email address: \S+$"
 
 NICKSERV      = Nick("nickserv")
 NS_INFO_END   = Response(
-    "NOTICE", [SELF, Formatless("*** End of Info ***")], NICKSERV
+    "NOTICE", [SELF, Formatless("ORGANIZATIONS:")], NICKSERV
 )
 NS_INFO_NONE  = Response(
-    "NOTICE", [SELF, Regex(r"^\S+ is not registered.$")], NICKSERV
+    "NOTICE", [SELF, Regex(r"^Nick \S+ is not registered.$")], NICKSERV
 )
 NS_INFO_EMAIL = Response("NOTICE", [SELF, Regex(RE_EMAIL)], NICKSERV)
 
@@ -60,11 +60,12 @@ class Server(BaseServer):
             oper_file: str):
 
         try:
-            challenge = Challenge(keyfile=oper_file, password=oper_pass)
+             self.send(build("OPER", [oper_name] [oper_pass]))
+#            challenge = Challenge(keyfile=oper_file, password=oper_pass)
         except Exception:
             traceback.print_exc()
         else:
-            await self.send(build("CHALLENGE", [oper_name]))
+            await self.send(build("OPER", [oper_name] [oper_pass]))
             challenge_text = Response(RPL_RSACHALLENGE2,      [SELF, ANY])
             challenge_stop = Response(RPL_ENDOFRSACHALLENGE2, [SELF])
             #:lithium.libera.chat 740 sandcat :foobarbazmeow
@@ -215,12 +216,12 @@ class Server(BaseServer):
             args:    str,
             tags:    Optional[Dict[str, str]]):
 
-        if tags and "solanum.chat/oper" in tags:
+        if tags and "inspircd.org/account-id" in tags:
             attrib  = f"cmd_{command}"
             if hasattr(self, attrib):
                 outs = await getattr(self, attrib)(who, args)
                 for out in outs:
-                    await self.send(build("NOTICE", [target, out]))
+                    await self.send(build("PRIVMSG", [target, out]))
 
     async def cmd_emailstatus(self,
             nick:  str,
