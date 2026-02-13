@@ -1,5 +1,5 @@
-import asyncio, re, time, traceback
-from datetime    import datetime
+import asyncio, re, time
+from datetime    import datetime, timezone
 from typing      import cast, Dict, Iterable, List, Optional, Tuple
 from uuid        import uuid4
 
@@ -8,19 +8,18 @@ from ircrobots import Capability
 from ircrobots import Bot as BaseBot
 from ircrobots import Server as BaseServer
 
-from ircchallenge       import Challenge
 from ircstates.numerics import *
 from ircrobots.matching import Response, SELF, ANY, Nick, Regex, Formatless
 
 from .common import EmailInfo, human_duration, LimitedList, LimitedOrderedDict
 from .config import Config
 
-CAP_OPER = Capability(None, "solanum.chat/oper")
-RE_EMAIL = r"^Email\s*: (\S+)$"
+CAP_ACCOUNT_TAG = Capability(None, "account-tag")
+RE_EMAIL = r"^\s*E-?mail\s*:\s*(\S+)$"
 
 NICKSERV      = Nick("nickserv")
 NS_INFO_END   = Response(
-    "NOTICE", [SELF, Formatless("*** End of Info ***")], NICKSERV
+    "NOTICE", [SELF, Formatless("End of Info")], NICKSERV
 )
 NS_INFO_NONE  = Response(
     "NOTICE", [SELF, Regex(r"^\S+ is not registered.$")], NICKSERV
@@ -28,9 +27,6 @@ NS_INFO_NONE  = Response(
 NS_INFO_EMAIL = Response("NOTICE", [SELF, Regex(RE_EMAIL)], NICKSERV)
 
 
-# not in ircstates yet...
-RPL_RSACHALLENGE2      = "740"
-RPL_ENDOFRSACHALLENGE2 = "741"
 RPL_YOUREOPER          = "381"
 
 class Server(BaseServer):
@@ -48,38 +44,12 @@ class Server(BaseServer):
             LimitedList(config.history)
 
         super().__init__(bot, name)
-        self.desired_caps.add(CAP_OPER)
+        self.desired_caps.add(CAP_ACCOUNT_TAG)
 
     def set_throttle(self, rate: int, time: float):
         # turn off throttling
         pass
 
-    async def _oper_challenge(self,
-            oper_name: str,
-            oper_pass: str,
-            oper_file: str):
-
-        try:
-            challenge = Challenge(keyfile=oper_file, password=oper_pass)
-        except Exception:
-            traceback.print_exc()
-        else:
-            await self.send(build("CHALLENGE", [oper_name]))
-            challenge_text = Response(RPL_RSACHALLENGE2,      [SELF, ANY])
-            challenge_stop = Response(RPL_ENDOFRSACHALLENGE2, [SELF])
-            #:lithium.libera.chat 740 sandcat :foobarbazmeow
-            #:lithium.libera.chat 741 sandcat :End of CHALLENGE
-
-            while True:
-                challenge_line = await self.wait_for({
-                    challenge_text, challenge_stop
-                })
-                if challenge_line.command == RPL_RSACHALLENGE2:
-                    challenge.push(challenge_line.params[1])
-                else:
-                    retort = challenge.finalise()
-                    await self.send(build("CHALLENGE", [f"+{retort}"]))
-                    break
     async def _get_nickserv_email(self, query: str) -> Optional[str]:
         await self.send(build("NS", ["INFO", query]))
         line = await self.wait_for({
@@ -105,10 +75,21 @@ class Server(BaseServer):
         return None
 
     async def _print_log(self, info: EmailInfo):
+        reason = info.reason or ""
+        # Extract just the SMTP code + status text (e.g. "250 2.0.0 OK")
+        parts = reason.split()
+        if len(parts) >= 3 and parts[0].isdigit():
+            smtp_reason = " ".join(parts[:3])
+        elif len(parts) >= 1 and parts[0].isdigit():
+            smtp_reason = parts[0]
+        else:
+            smtp_reason = reason
+
         log = self._config.log_line.format(**{
+            "from":   info._from,
             "email":  info.to,
             "status": info.status,
-            "reason": info.reason
+            "reason": smtp_reason
         })
         await self.send_raw(log)
 
@@ -155,12 +136,22 @@ class Server(BaseServer):
     async def line_read(self, line: Line):
         if line.command == RPL_WELCOME:
             await self.send(build("MODE", [self.nickname, "+g"]))
-            oper_name, oper_pass, oper_file = self._config.oper
-            await self._oper_challenge(oper_name, oper_pass, oper_file)
+            oper_name, oper_pass = self._config.oper
+            await self.send(build("OPER", [oper_name, oper_pass]))
 
         elif line.command == RPL_YOUREOPER:
             # we never want snotes
             await self.send(build("MODE", [self.nickname, "-s"]))
+            # SAJOIN configured channels (bypasses +i)
+            for channel in self._config.channels:
+                await self.send(build("SAJOIN", [self.nickname, channel]))
+
+        elif line.command == "KICK":
+            # rejoin if kicked from a configured channel
+            channel = line.params[0]
+            kicked  = line.params[1]
+            if self.is_me(kicked) and channel in self._config.channels:
+                await self.send(build("SAJOIN", [self.nickname, channel]))
 
         elif (line.command == "PRIVMSG" and
                 line.source is not None and
@@ -215,7 +206,8 @@ class Server(BaseServer):
             args:    str,
             tags:    Optional[Dict[str, str]]):
 
-        if tags and "solanum.chat/oper" in tags:
+        account = tags.get("account") if tags else None
+        if account and account in self._config.allowed_accounts:
             attrib  = f"cmd_{command}"
             if hasattr(self, attrib):
                 outs = await getattr(self, attrib)(who, args)
@@ -243,7 +235,7 @@ class Server(BaseServer):
 
         outs: List[str] = []
         for info in self._emails_by_to(search_key):
-            ts    = datetime.utcfromtimestamp(info.ts).isoformat()
+            ts    = datetime.fromtimestamp(info.ts, tz=timezone.utc).isoformat()
             since = human_duration(int(time.time()-info.ts))
             outs.append(
                 f"{ts} ({since} ago)"

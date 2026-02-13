@@ -14,13 +14,13 @@ class Config(object):
     password: str
     channels: List[str]
     sasl:     Tuple[str, str]
-    oper:     Tuple[str, str, str]
-
-    log_file: str
-    log_line: str
-    patterns: List[Pattern]
-    froms:    Set[str]
-    history:  int
+    oper:     Tuple[str, str]
+    log_file:         str
+    log_line:         str
+    patterns:         List[Pattern]
+    froms:            Set[str]
+    history:          int
+    allowed_accounts: Set[str]
 
 def load(filepath: str):
     with open(filepath) as file:
@@ -30,7 +30,6 @@ def load(filepath: str):
 
     oper_name = config_yaml["oper"]["name"]
     oper_pass = config_yaml["oper"]["pass"]
-    oper_file = expanduser(config_yaml["oper"]["file"])
 
     return Config(
         config_yaml["server"],
@@ -40,10 +39,11 @@ def load(filepath: str):
         config_yaml["password"],
         config_yaml["channels"],
         (config_yaml["sasl"]["username"], config_yaml["sasl"]["password"]),
-        (oper_name, oper_pass, oper_file),
+        (oper_name, oper_pass),
         expanduser(config_yaml["log-file"]),
         config_yaml["log-line"],
         [re_compile(p) for p in config_yaml["patterns"]],
         set(config_yaml["froms"]),
-        config_yaml["history"]
+        config_yaml["history"],
+        set(config_yaml.get("allowed-accounts", []))
     )

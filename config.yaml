@@ -1,0 +1,33 @@
+server: irc.irc4fun.net:+6697
+nickname: tungstite
+#username: tungstite
+#realname: tungstite
+password: tungstite:avaava2020@!
+channels:
+  - "#opers"
+
+sasl:
+  username: tungstite
+  password: avaava2020@!
+
+oper:
+  name: jean
+  pass: avaava2020@!
+
+allowed-accounts:
+  - reverse
+  - sinistar
+  - dracorex
+  - tabb
+
+patterns:
+  - 'postfix/qmgr\[\S+ (?P<id>\S+): from=<(?P<from>\S+)>, '
+  - 'postfix/\w+\[\S+ (?P<id>\S+): to=<(?P<to>\S+)>, .*? status=(?P<status>\S+) \((?P<reason>.*)\)$'
+  - 'postfix(?:-submission)?/smtpd\[\S+ NOQUEUE: (?P<status>\S+): (?P<reason>[^;]+); from=<(?P<from>\S+)> to=<(?P<to>\S+)>'
+
+froms:
+  - services@irc4fun.net
+
+log-file: /var/log/postfix.log
+log-line: "PRIVMSG #opers :\x0314[\x0F\x02EMAIL\x02\x0314]\x0F from \x02{from}\x02 to \x02{email}\x02 \x0314-\x0F \x02{status}\x02\x0314:\x0F {reason}"
+history: 100

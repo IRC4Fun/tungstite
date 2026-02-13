@@ -2,6 +2,9 @@ import asyncio
 from argparse import ArgumentParser
 
 from ircrobots import ConnectionParams, SASLUserPass
+import ircrobots.sasl
+# Force PLAIN to avoid ircrobots SCRAM hang bug on auth failure
+ircrobots.sasl.SASL_USERPASS_MECHANISMS = ["PLAIN"]
 
 from .       import Bot
 from .config import Config, load as config_load
@@ -16,8 +19,6 @@ async def main(config: Config):
     params.realname = config.realname
     params.password = config.password
     params.sasl = SASLUserPass(sasl_user, sasl_pass)
-    params.autojoin = config.channels
-
     await bot.add_server("irc", params)
     await asyncio.wait([
         asyncio.create_task(tail_log_file(bot, config.log_file, config.patterns)),
