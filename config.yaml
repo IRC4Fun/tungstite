@@ -2,17 +2,17 @@ server: irc.irc4fun.net:+6697
 nickname: tungstite
 #username: tungstite
 #realname: tungstite
-password: tungstite:avaava2020@!
+password: tungstite:${{ secrets.TSASLPASS }}
 channels:
   - "#opers"
 
 sasl:
   username: tungstite
-  password: avaava2020@!
+  password: ${{ secrets.TSASLPASS }}
 
 oper:
-  name: jean
-  pass: avaava2020@!
+  name: tungstite
+  pass: ${{ secrets.OPERPASS }}
 
 allowed-accounts:
   - reverse
